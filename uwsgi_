@@ -18,6 +18,8 @@ MODES = {
     'rss': 'physical memory',
 }
 
+PID_FILE_ROOT = '/var/run/uwsgi/'
+
 
 def config(apps):
     out = ('graph_title {0}\n'
@@ -25,11 +27,11 @@ def config(apps):
            'graph_category {1}\n').format(MODES[mode], 'uwsgi')
     if mode in ['tx', 'rss']:
         out += 'graph_args --base 1024\n'
-    if mode in ['requests', 'exceptions', 'tx']:
-        out += ('{0}.type DERIVE\n'
-               '{0}.min 0\n').format(mode)
     for app in apps:
         out += "{0}.label {0}\n".format(app["name"], mode)
+        if mode in ['requests', 'exceptions', 'tx']:
+            out += ('{0}.type DERIVE\n'
+                    '{0}.min 0\n').format(app["name"])
     return out
 
 
@@ -59,20 +61,6 @@ def get_value_from_uwsgi_stats_server(app, mode):
     else:
         value = sum([x.get(mode, 0) for x in workers])
     return value
-
-
-def get_master(app, master_processes):
-    """Return the master process for app given the set of all master processes.
-    The master process to return is the one that has open an appropriate
-    connection. If not found, returns None.
-    """
-    for m in master_processes:
-        for c in m.get_connections():
-            addr = c.local_address
-            if (len(addr) == 2 and str(addr[1]) == app["port"]) or (
-                    addr == app["port"]):
-                return m
-    return None
     
 
 def get_uwsgi_processes(apps):
@@ -81,12 +69,11 @@ def get_uwsgi_processes(apps):
     and worker_processes (a list of Process objects).
     """
     master_processes = []
-    for p in psutil.process_iter():
-        if p.cmdline[0] == 'uWSGI master':
-            master_processes.append(p)
     for app in apps:
-        app['master_process'] = get_master(app, master_processes)
-        app['worker_processes'] = app['master_process'].get_children()
+        with open (PID_FILE_ROOT + app['name'] + ".pid", "r") as pidfile:
+            app['pid'] = int(pidfile.read())
+            app['master_process'] = psutil.Process(app['pid'])
+            app['worker_processes'] = app['master_process'].get_children()
 
 
 def get_rss(app):
@@ -113,8 +100,12 @@ for app, port in izip_longest(apps, ports, fillvalue=''):
 
 name, p, mode = os.path.basename(__file__).partition('_')
 
+if mode == '':
+    mode = 'requests'
+
 if len(sys.argv)>1 and sys.argv[1]=='config':
-    print config(apps)
+    out = config(apps)
+    sys.stdout.write(out)
     sys.exit(0)
 
 if mode == 'rss':
