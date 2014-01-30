@@ -43,6 +43,10 @@ Configuration
       env.port 4999 4998 4997
       env.name app1 app2 app3
 
+3. If you want to use the memory plugin (``rss``), make sure to have
+   the PID files of the corresponding apps available in 
+   ``/var/run/uwsgi/:app_name.pid``, for example:
+   ``/var/run/uwsgi/app1.pid``
 
 License
 -------
